@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EffVLA — What Makes an Efficient VLA?</title>
+<meta name="description" content="Navigating action-head design, scaling, and latency for modular Vision-Language-Action models. What decides the action head is not its decoder, loss, or inference budget, but how it is initialized.">
+<meta property="og:title" content="What Makes an Efficient VLA?">
+<meta property="og:description" content="Navigating Action-Head Design, Scaling, and Latency">
+<meta property="og:image" content="static/images/hero.png">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&family=Noto+Serif:ital,wght@0,400;0,600;1,400&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --green:#0B5D43; --lift:#12A67E; --grey:#AEB4BD;
+    --ink:#1B2A24; --body:#3A4A43; --muted:#6B7A73;
+    --wash:#F4F7F5; --rule:#E2E9E5;
+  }
+  html{scroll-behavior:smooth;scroll-padding-top:60px}
+  body{font-family:'Noto Serif',Georgia,serif;color:var(--body);background:#fff;line-height:1.72}
+  .title,.subtitle,h1,h2,h3,.button,.navbar,th,.tag,figcaption{font-family:'Noto Sans',system-ui,sans-serif}
+  .num,td{font-family:'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+  a{color:var(--green)}
+  a:hover{color:var(--lift)}
+
+  /* nav */
+  .nav{position:sticky;top:0;z-index:40;background:rgba(255,255,255,.94);
+       backdrop-filter:blur(8px);border-bottom:1px solid var(--rule)}
+  .nav .inner{max-width:1000px;margin:0 auto;padding:0 1.5rem;height:52px;
+       display:flex;align-items:center;gap:1.5rem;overflow-x:auto;
+       /* stays swipeable on narrow screens, but without the scrollbar chrome */
+       scrollbar-width:none;-ms-overflow-style:none}
+  .nav .inner::-webkit-scrollbar{display:none}
+  .nav a{font-size:.85rem;font-weight:600;color:var(--muted);text-decoration:none;white-space:nowrap;
+       font-family:'Noto Sans',sans-serif}
+  .nav a:hover{color:var(--green)}
+  .nav .mark{font-weight:700;color:var(--green);margin-right:auto}
+
+  /* hero */
+  .pub-title{font-size:2.6rem!important;line-height:1.15;letter-spacing:-.02em;
+       color:var(--ink)!important;font-weight:700}
+  .pub-title em{font-style:normal;color:var(--green)}
+  .pub-sub{font-size:1.85rem;line-height:1.35;color:var(--ink);margin-top:1.1rem;font-weight:500;
+       font-family:'Noto Sans',system-ui,sans-serif;letter-spacing:-.015em}
+  /* Author/affiliation lists wrap as flex items with gaps. Never use &nbsp; for spacing:
+     it glues words into unbreakable runs that overflow instead of wrapping. */
+  .authors{display:flex;flex-wrap:wrap;justify-content:center;gap:.15rem 1rem;
+       font-size:1rem;line-height:1.9;margin-top:1.6rem;color:var(--ink);
+       font-family:'Noto Sans',sans-serif}
+  .authors span{white-space:nowrap}
+  .affil{display:flex;flex-wrap:wrap;justify-content:center;gap:.1rem .9rem;
+       font-size:.85rem;color:var(--muted);line-height:1.7;margin-top:.9rem;
+       font-family:'Noto Sans',sans-serif}
+  .affil span{white-space:nowrap}
+  .legend{font-size:.78rem;color:var(--muted);margin-top:.5rem;font-family:'Noto Sans',sans-serif}
+  sup{font-size:.65em}
+  .button.is-paper{background:var(--green);color:#fff;border:none;font-weight:600}
+  .button.is-paper:hover{background:var(--ink);color:#fff}
+  .button.is-ghost2{background:#fff;color:var(--green);border:1px solid var(--rule);font-weight:600}
+  .button.is-ghost2:hover{border-color:var(--green);color:var(--green)}
+  .button[disabled]{opacity:.55}
+
+  /* headline stats */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(10rem,1fr));gap:0;
+       border:1px solid var(--rule);border-radius:4px;margin-top:2.2rem;background:var(--wash)}
+  .stats div{padding:1.1rem 1rem;border-right:1px solid var(--rule);text-align:center}
+  .stats div:last-child{border-right:none}
+  .stats .v{display:block;font-family:'JetBrains Mono',monospace;font-size:1.5rem;font-weight:700;
+       color:var(--green);letter-spacing:-.02em}
+  .stats .k{display:block;font-size:.72rem;color:var(--muted);margin-top:.3rem;line-height:1.4;
+       font-family:'Noto Sans',sans-serif}
+
+  /* sections */
+  .section{padding:3.5rem 1.5rem}
+  .sec-title{font-size:1.75rem!important;color:var(--ink)!important;font-weight:700;
+       letter-spacing:-.015em;margin-bottom:.4rem!important}
+  .sec-kicker{font-family:'JetBrains Mono',monospace;font-size:.72rem;letter-spacing:.12em;
+       text-transform:uppercase;color:var(--lift);margin-bottom:.5rem}
+  .lede{font-size:1.12rem;color:var(--ink);margin-bottom:1.2rem}
+  hr.rule{background:var(--rule);height:1px;margin:0}
+  .content p{margin-bottom:1.1rem}
+  strong{color:var(--ink)}
+
+  figure{margin:1.8rem 0}
+  figure img{width:100%;height:auto;display:block;border:1px solid var(--rule);border-radius:3px}
+  figcaption{font-size:.85rem;color:var(--muted);margin-top:.7rem;line-height:1.6;text-align:left}
+
+  /* findings */
+  .find{border:1px solid var(--rule);border-top:3px solid var(--lift);border-radius:3px;
+       padding:1.2rem 1.3rem;height:100%;background:#fff}
+  .find .k{font-family:'JetBrains Mono',monospace;font-size:.68rem;letter-spacing:.08em;
+       text-transform:uppercase;color:var(--lift)}
+  .find h4{font-family:'Noto Sans',sans-serif;font-weight:700;color:var(--ink);margin:.4rem 0 .5rem;
+       font-size:1rem}
+  .find p{font-size:.92rem;color:var(--muted);margin:0}
+
+  /* tables */
+  /* wide tables scroll inside the column, so every section keeps the same width */
+  .tbl{overflow-x:auto;margin:1.5rem 0;padding-bottom:.35rem;
+       scrollbar-width:thin;scrollbar-color:var(--grey) var(--wash)}
+  .tbl::-webkit-scrollbar{height:9px}
+  .tbl::-webkit-scrollbar-track{background:var(--wash);border-radius:5px}
+  .tbl::-webkit-scrollbar-thumb{background:var(--grey);border-radius:5px}
+  .tbl::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+  .scroll-hint{font-family:'Noto Sans',sans-serif;font-size:.72rem;color:var(--muted);
+       margin:-.9rem 0 1rem;text-align:right}
+  table.t{border-collapse:collapse;width:100%;font-size:.86rem;min-width:640px}
+  table.t th,table.t td{padding:.55rem .7rem;text-align:right;border-bottom:1px solid var(--rule);
+       white-space:nowrap}
+  table.t th:first-child,table.t td:first-child{text-align:left;font-family:'Noto Sans',sans-serif;
+       color:var(--ink)}
+  table.t thead th{font-size:.72rem;letter-spacing:.05em;text-transform:uppercase;color:var(--green);
+       border-bottom:2px solid var(--green);font-weight:600}
+  table.t tbody tr.ours{background:rgba(18,166,126,.08)}
+  table.t tbody tr.ours td{color:var(--green);font-weight:700}
+  .pos{color:var(--lift);font-weight:700}
+  .neg{color:#B4443A;font-weight:700}
+  /* paper-style ranking marks + grouped header for the wide results table */
+  table.t td.best{font-weight:700;color:var(--ink)}
+  table.t tbody tr.ours td.best{color:var(--green)}
+  table.t td.sec{text-decoration:underline;text-underline-offset:2px;text-decoration-color:var(--grey)}
+  b.best{color:var(--ink)} span.sec{text-decoration:underline;text-underline-offset:2px}
+  table.t-wide{min-width:920px;font-size:.8rem}
+  table.t-wide th,table.t-wide td{padding:.45rem .45rem}
+  table.t th.grp{text-align:center;border-bottom:1px solid var(--rule);font-size:.7rem}
+  table.t th.grp-l,table.t td.grp-l{border-left:1px solid var(--rule)}
+  table.t th.lft,table.t td.lft{text-align:left}
+  .cap{font-size:.8rem;color:var(--muted);line-height:1.6;font-family:'Noto Sans',sans-serif}
+
+  .callout{background:var(--wash);border-left:3px solid var(--lift);padding:1.1rem 1.3rem;
+       margin:1.8rem 0;color:var(--ink);border-radius:0 3px 3px 0}
+  pre.bib{background:var(--wash);border:1px solid var(--rule);border-radius:3px;padding:1.2rem;
+       font-family:'JetBrains Mono',monospace;font-size:.78rem;line-height:1.7;overflow-x:auto;
+       color:var(--body)}
+  footer{border-top:1px solid var(--rule);padding:2rem 1.5rem 3rem;text-align:center;
+       color:var(--muted);font-size:.85rem;font-family:'Noto Sans',sans-serif}
+  @media(max-width:768px){
+    .pub-title{font-size:1.9rem!important}
+    .pub-sub{font-size:1.2rem}          /* keep the title clearly dominant on small screens */
+    .nav .mark{margin-right:1rem}
+  }
+</style>
+</head>
+<body>
+
+<div class="nav"><div class="inner">
+  <a class="mark" href="#top">EffVLA</a>
+  <a href="#abstract">Abstract</a>
+  <a href="#findings">Findings</a>
+  <a href="#substrates">Design space</a>
+  <a href="#reversal">The reversal</a>
+  <a href="#alignment">Alignment</a>
+  <a href="#scaling">Scaling</a>
+  <a href="#results">Results</a>
+  <a href="#holds">Holds elsewhere</a>
+  <a href="#bibtex">BibTeX</a>
+</div></div>
+
+<span id="top"></span>
+
+<!-- ===================== HERO ===================== -->
+<section class="section" style="padding-top:3.5rem;padding-bottom:1rem">
+  <div class="container is-max-desktop has-text-centered">
+    <h1 class="title pub-title">What Makes an <em>Efficient</em> VLA?</h1>
+    <p class="pub-sub">Navigating Action-Head Design,<br>Scaling, and Latency</p>
+
+    <p class="authors">
+      <span>Luoyang Sun<sup>1,2,3,4</sup>*</span>
+      <span>Guoyang Xia<sup>5,4</sup>*</span>
+      <span>Fengfa Li<sup>4</sup></span>
+      <span>Lei Ren<sup>4</sup>†‡</span>
+      <span>Xinyu Cui<sup>1,2</sup></span>
+      <span>Haifeng Zhang<sup>1</sup>‡</span>
+      <span>Fangxiang Feng<sup>5</sup></span>
+      <span>Kaike Zhang<sup>4</sup></span>
+      <span>Kun Zhan<sup>4</sup></span>
+      <span>Yan Xie<sup>4</sup></span>
+      <span>Jun Wang<sup>6</sup></span>
+      <span>Cheng Deng<sup>7</sup>‡</span>
+    </p>
+    <p class="affil">
+      <span><sup>1</sup>Institute of Automation, Chinese Academy of Sciences</span>
+      <span><sup>2</sup>University of Chinese Academy of Sciences</span>
+      <span><sup>3</sup>AI Lab, The Yangtze River Delta</span>
+      <span><sup>4</sup>Li Auto Inc.</span>
+      <span><sup>5</sup>Beijing University of Posts and Telecommunications</span>
+      <span><sup>6</sup>University College London</span>
+      <span><sup>7</sup>University of Edinburgh</span>
+    </p>
+    <p class="legend">*Equal contribution &nbsp; †Project Leader &nbsp; ‡Corresponding author</p>
+
+    <div class="buttons is-centered" style="margin-top:1.8rem">
+      <a class="button is-ghost2" disabled>arXiv — coming soon</a>
+      <a class="button is-paper" href="#">Paper (PDF)</a>
+      <a class="button is-ghost2" href="https://github.com/MindVLA-Team/EFFVLA">Code</a>
+    </div>
+
+  </div>
+</section>
+
+<!-- ===================== TEASER ===================== -->
+<section class="section" style="padding-top:1.5rem;padding-bottom:1.5rem">
+  <div class="container is-max-desktop">
+    <figure>
+      <img src="static/images/hero.png" alt="The module-scale factorial, the eight action-head substrates, and every substrate on the accuracy-latency plane.">
+      <figcaption><strong>A controlled design-space study of a modular VLA on one fixed backbone.</strong>
+        <strong>(a)</strong> The module-scale factorial: the vision encoder (V), language backbone (L)
+        and action head (A) are held at an anchor and swept independently, crossed with the orthogonal
+        action-head axes. <strong>(b)</strong> The eight action-head <em>substrates</em> — all share the
+        same V+L backbone and differ only in the head. <strong>(c)</strong> Every measured substrate on
+        the accuracy–latency plane; EffVLA holds the frontier.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<hr class="rule">
+
+<!-- ===================== ABSTRACT ===================== -->
+<section class="section" id="abstract">
+  <div class="container is-max-desktop">
+    <h2 class="title sec-title has-text-centered">Abstract</h2>
+    <div class="content has-text-justified" style="margin-top:1.5rem">
+      <p>Vision-Language-Action (VLA) models combine a pretrained vision encoder, a language backbone,
+      and an action head, but which of these design choices actually drives performance has not been
+      measured under controlled, latency-paired conditions. We fix the backbone (SigLIP2-So400m and
+      Qwen2.5) and the pipeline (DROID, LIBERO, LIBERO-Plus), and sweep the action head along four axes
+      — decoder, loss, initialization, inference passes — and the per-module scale, pairing every
+      configuration with measured on-device latency.</p>
+      <p>Three findings come out of the experiment. <strong>First</strong>, what decides the action head
+      is not its decoder, loss, or inference budget but <em>how it is initialized</em>. Copying the last
+      transformer layers of the language backbone into the head is the single largest lever we measure,
+      raises accuracy at no latency cost, and is the only axis that pays at every module scale we test.
+      It also reorders the rest of the design space: flow matching, extra inference passes, and a heavier
+      decoder pay off only while the head is randomly initialized and stop paying once it is not, as if
+      the expressive machinery were compensating for something the initialized head already has. We read
+      that something as representation transfer, and offer it as the account that best organizes the
+      measurements rather than as a demonstrated cause. <strong>Second</strong>,
+      capacity only pays after alignment: the action head is the highest-return module to scale, but
+      only once it is aligned. <strong>Third</strong>, those returns saturate at a model size close to
+      the one today's π-series VLAs already use, so growing the model further only adds latency.</p>
+      <p>The three together specify <strong>EffVLA</strong>, a compact model that matches the strongest
+      open-source VLAs on standard LIBERO, leads on most LIBERO-Plus perturbation axes at lower
+      latency, and transfers to a real SO-ARM101 arm with the recipe unchanged.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="rule">
+
+<!-- ===================== FINDINGS ===================== -->
+<section class="section" id="findings">
+  <div class="container is-max-desktop">
+    <p class="sec-kicker has-text-centered">Three findings</p>
+    <h2 class="title sec-title has-text-centered">What the measurement says</h2>
+    <div class="columns" style="margin-top:2rem">
+      <div class="column"><div class="find">
+        <span class="k">Finding 1 · what to build</span>
+        <h4>Align the head, then keep it simple</h4>
+        <p>What the head is short of is alignment with the VLM, not expressive capacity.
+        Initialization supplies it: <strong>+7.1</strong> points at no latency cost. Once aligned,
+        flow matching loses 4.4; a fourth pass and a heavier decoder fall within noise.</p>
+      </div></div>
+      <div class="column"><div class="find">
+        <span class="k">Finding 2 · where to scale</span>
+        <h4>Capacity only pays after alignment</h4>
+        <p>Aligned, the action head returns ~<strong>4</strong> success points per added millisecond,
+        against ~1 for the vision encoder and ~0.15 for the language backbone. Misaligned, the same
+        scaling buys about a third as much (+3.1 vs +9.4).</p>
+      </div></div>
+      <div class="column"><div class="find">
+        <span class="k">Finding 3 · how big</span>
+        <h4>Stop at a modest size</h4>
+        <p>On LIBERO-Plus, scaling any module past the <span class="num">l</span> configuration leaves
+        accuracy flat while latency keeps climbing. The <strong>~3.75B</strong> budget — close to the
+        π-series scale — is the efficiency/accuracy knee.</p>
+      </div></div>
+    </div>
+  </div>
+</section>
+
+<hr class="rule">
+
+<!-- ===================== DESIGN SPACE ===================== -->
+<section class="section" id="substrates">
+  <div class="container is-max-desktop">
+    <p class="sec-kicker">The design space</p>
+    <h2 class="title sec-title">Eight substrates, one backbone</h2>
+    <div class="content">
+      <p class="lede">A <em>substrate</em> is a fixed choice of the four action-head axes, independent
+      of module size. All eight share the same SigLIP2 + Qwen2.5 backbone and read it through the same
+      KV-share interface — they differ only in the action head.</p>
+      <p>Everything that usually moves between VLA papers is held still: same backbone, same DROID →
+      LIBERO pipeline, same LIBERO-Plus protocol (four task suites × seven zero-shot perturbation axes,
+      ~1,000 rollouts per cell), same hardware for latency (RTX 5090, bf16, batch 1, chunk size 8,
+      <code>torch.compile</code>). Any difference below has to come from the head.</p>
+    </div>
+
+    <div class="tbl">
+      <table class="t">
+        <thead><tr><th>Substrate</th><th>Decoder</th><th>Loss</th><th>Init</th><th>Passes</th><th>Succ. (%)</th></tr></thead>
+        <tbody>
+          <tr><td>FAST</td><td>AR trunk</td><td>NTP</td><td>—</td><td>many</td><td>57.7</td></tr>
+          <tr><td>OFT</td><td>MLP</td><td>L1</td><td>—</td><td>1</td><td>79.0</td></tr>
+          <tr><td>OFT-TF</td><td>TF block</td><td>L1</td><td>random</td><td>1</td><td>72.7</td></tr>
+          <tr><td>OFT-TF-r4</td><td>TF block</td><td>L1</td><td>random</td><td>4</td><td>74.8</td></tr>
+          <tr class="ours"><td>EffVLA</td><td>TF block</td><td>L1</td><td>VLM-init</td><td>1</td><td>79.8</td></tr>
+          <tr><td>EffVLA-r4</td><td>TF block</td><td>L1</td><td>VLM-init</td><td>4</td><td>79.6</td></tr>
+          <tr><td>π₀</td><td>TF block</td><td>flow matching</td><td>random</td><td>4</td><td>77.4</td></tr>
+          <tr><td>π₀-vlminit</td><td>TF block</td><td>flow matching</td><td>VLM-init</td><td>4</td><td>75.2</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="cap">LIBERO-Plus 4-suite mean success rate at V = L = A = <span class="num">l</span>.
+    Decoding actions as language tokens (FAST) trails every parallel head by at least 15 points and runs
+    nearly 5× slower. A plain MLP head already lands within 1 point of the best cell. Stacking
+    transformer blocks helps <em>only</em> when they are initialized from the backbone.</p>
+  </div>
+</section>
+
+<hr class="rule">
+
+<!-- ===================== REVERSAL ===================== -->
+<section class="section" id="reversal">
+  <div class="container is-max-desktop">
+    <p class="sec-kicker">The result that reorganized the paper</p>
+    <h2 class="title sec-title">Every expressive trick works — until you align the head</h2>
+    <div class="content">
+      <p class="lede">Take the same four axes and read each one twice: once on a head initialized at
+      random, once on a head initialized from the backbone. The decoder and loss axes
+      <strong>reverse sign</strong>. Alignment never does.</p>
+    </div>
+
+    <div class="tbl">
+      <table class="t">
+        <thead><tr>
+          <th>Axis</th><th>Variation</th>
+          <th>On a misaligned head<br>(random init)</th>
+          <th>On an aligned head<br>(VLM-init)</th>
+        </tr></thead>
+        <tbody>
+          <tr><td>Decoder</td><td>MLP → transformer block</td><td class="neg">−6.3</td><td class="pos">+0.8</td></tr>
+          <tr><td>Loss</td><td>L1 → flow matching</td><td class="pos">+2.6</td><td class="neg">−4.4</td></tr>
+          <tr><td>Inference compute</td><td>1 pass → 4 passes</td><td class="pos">+2.1</td><td class="neg">−0.2</td></tr>
+          <tr class="ours"><td>Alignment</td><td>random → VLM-init</td><td colspan="2" style="text-align:center">+7.1 &nbsp;— positive at every module scale</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="cap">LIBERO-Plus success-rate change in points, at V = L = A = <span class="num">l</span>.
+    The evaluation standard error is ≈1.4 points, so the compute axis sits inside it under both
+    initializations — extra passes simply stop buying anything once the head is aligned.</p>
+
+    <div class="callout">Every axis that reverses is a way of adding <strong>expressive capacity</strong>
+    to the head — a generative loss, a second pass, more decoder machinery — and each earns its keep
+    only while the head is initialized at random. Once initialization supplies what a random head lacks,
+    none of that machinery has anything left to contribute, and it becomes pure latency. What the head
+    is short of is not expressiveness. It is <strong>alignment</strong>.</div>
+  </div>
+</section>
+
+<hr class="rule">
+
+<!-- ===================== ALIGNMENT ===================== -->
+<section class="section" id="alignment">
+  <div class="container is-max-desktop">
+    <p class="sec-kicker">The mechanism</p>
+    <h2 class="title sec-title">Alignment is not a metaphor — it is measurable</h2>
+    <div class="content">
+      <p class="lede">If alignment is really the variable, it should be visible in the weights and in
+      the behaviour, not just in the success rates. It is, in both.</p>
+      <p><strong>In weight space.</strong> Measuring linear CKA between the action head and the
+      corresponding backbone layers, the aligned head holds <span class="num">0.76</span> with the
+      backbone throughout fine-tuning while a random head never rises above
+      <span class="num">0.24</span>. The separation holds at every layer of the head, and the
+      success-rate advantage holds across all six vision- and language-backbone sizes. Read per module,
+      the K+V and output projections are preserved most (CKA 0.79 and 0.81) while the query path adapts
+      most (0.54): the head keeps <em>what</em> the backbone reads and re-purposes <em>how</em> it attends.</p>
+    </div>
+    <figure>
+      <img src="static/images/cka.png" alt="CKA between action head and backbone through training and across layers, and the success-rate gain across sizes.">
+      <figcaption><strong>The aligned head stays part of the backbone it was copied from.</strong>
+        <strong>(a)</strong> Through fine-tuning it holds a CKA of 0.76 with the backbone; a random head
+        stays at 0.24. <strong>(b)</strong> The same separation at every layer of the head.
+        <strong>(c)</strong> The success-rate gain holds across three vision-encoder and three
+        language-backbone sizes.</figcaption>
+    </figure>
+
+    <div class="content">
+      <p><strong>In behaviour.</strong> Told to “put the black bowl in the bottom drawer of the
+      cabinet,” the aligned head concentrates on the instruction and on the bowl it names, while the
+      random head spreads attention diffusely across the scene and leaves the instruction almost
+      unattended.</p>
+    </div>
+    <figure>
+      <img src="static/images/attention_case.png" alt="Attention overlays comparing random init and VLM-init on a single rollout.">
+      <figcaption><strong>A single rollout.</strong> Left: random init. Right: VLM-init. The vision
+        panels overlay the top-K attended patches (agent and wrist views); the ribbon below each shades
+        every instruction token by its attention. Text mass <span class="num">0.030</span> vs
+        <span class="num">0.223</span>.</figcaption>
+    </figure>
+
+    <div class="content">
+      <p>And it is not one lucky rollout. Across all <span class="num">128</span> rollouts the aligned
+      head places roughly <strong>four times</strong> as much attention on the instruction
+      (<span class="num">0.233</span> vs <span class="num">0.055</span>), and the two distributions do
+      not overlap on a single rollout. Ranked by attention, the words it looks at are the object and
+      location nouns that name the task.</p>
+    </div>
+    <figure>
+      <img src="static/images/attention_summary.png" alt="Aggregate instruction attention across 128 rollouts and the top-ranked instruction words.">
+      <figcaption><strong>Aggregated over all rollouts.</strong> <strong>(a)</strong> Instruction
+        attention per rollout, 64 per condition; the two conditions never overlap. <strong>(b)</strong>
+        The top instruction words by VLM-init attention are the object and location nouns that name the
+        task. The aligned head does not merely look at the instruction more — it looks at the part that
+        specifies the goal.</figcaption>
+    </figure>
+
+    <div class="callout" style="border-left-color:var(--grey)">
+      <strong>An honest caveat.</strong> We manipulate alignment only through initialization, so this
+      evidence explains the measurements rather than proving causation. The decisive control —
+      initializing from the <em>same</em> backbone weights with the alignment destroyed (permuted
+      layers, or a random orthogonal rotation) — would collapse both the CKA and the gain if alignment
+      is what matters. We flag it as future work in the paper rather than claiming the causal link.
+    </div>
+  </div>
+</section>
+
+<hr class="rule">
+
+<!-- ===================== SCALING ===================== -->
+<section class="section" id="scaling">
+  <div class="container is-max-desktop">
+    <p class="sec-kicker">Then capacity</p>
+    <h2 class="title sec-title">Capacity only pays after alignment — and then it stops</h2>
+    <div class="content">
+      <p class="lede">Once the head is aligned it becomes the single highest-return place to spend
+      compute. Misaligned, the same parameters buy about a third as much.</p>
+      <p>Added capacity on an aligned head <em>extends</em> a computation the backbone already shares;
+      on a misaligned head it must first spend itself relearning the interface. And it stops early: a
+      1B vision encoder scores <span class="num">78.9</span>, a 7B language backbone
+      <span class="num">77.8</span>, a 650M head <span class="num">78.3</span> — all at or below the
+      <span class="num">79.8</span> anchor, while latency only climbs.</p>
+    </div>
+
+    <div class="tbl">
+      <table class="t">
+        <thead><tr><th>Module scaled (s → l)</th><th>Δ success</th><th>Δ latency</th><th>Return (pts / ms)</th></tr></thead>
+        <tbody>
+          <tr class="ours"><td>Action head — aligned</td><td class="pos">+9.4</td><td>+2.4 ms</td><td>≈ 4</td></tr>
+          <tr><td>Action head — misaligned</td><td>+3.1</td><td>+2.4 ms</td><td>≈ 1.3</td></tr>
+          <tr><td>Vision encoder</td><td>+3.4</td><td>—</td><td>≈ 1</td></tr>
+          <tr><td>Language backbone</td><td>&lt; 2</td><td>—</td><td>≈ 0.15</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <figure>
+      <img src="static/images/module_scaling.png" alt="Success rate versus module parameter count for the language backbone, vision encoder and action head under three substrates.">
+      <figcaption><strong>Only the aligned substrate turns action-head capacity into accuracy — and
+        even that saturates.</strong> The vision and language axes scale at similar rates across
+        substrates; the action head separates them. Beyond the <span class="num">l</span> configuration
+        every curve flattens or dips, which is the empirical basis for fixing the model at ~3.75B.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<hr class="rule">
+
+<!-- ===================== RESULTS ===================== -->
+<section class="section" id="results">
+  <div class="container is-max-desktop">
+    <p class="sec-kicker">The recipe</p>
+    <h2 class="title sec-title">EffVLA — what the three rules select</h2>
+    <div class="content">
+      <p class="lede">The analysis specifies the model, not the other way round: a 4-layer
+      transformer-block head copied from the last 4 layers of Qwen2.5-3B, trained with single-pass L1
+      regression, reading the backbone through a KV-share interface on a SigLIP2-So400m encoder.</p>
+      <p>Of ~3.75B parameters the head adds only ~0.35B, and it runs in
+      <span class="num">39.2 ms</span> per action chunk. Nothing in the architecture is tuned beyond
+      what the three rules prescribe.</p>
+    </div>
+
+    <div class="tbl">
+      <table class="t t-wide">
+        <thead>
+          <tr>
+            <th rowspan="2" class="lft">Method</th>
+            <th colspan="5" class="grp">LIBERO</th>
+            <th colspan="7" class="grp grp-l">LIBERO-Plus</th>
+          </tr>
+          <tr>
+            <th>Spatial</th><th>Object</th><th>Goal</th><th>Long</th><th>Avg</th>
+            <th class="grp-l">BG</th><th>Init</th><th>Cam</th><th>Lang</th><th>Noise</th><th>Layout</th><th>Light</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="lft">OpenVLA</td>
+            <td>84.7</td><td>88.4</td><td>79.2</td><td>53.7</td><td>76.5</td>
+            <td class="grp-l">34.8</td><td>3.5</td><td>0.8</td><td>23.0</td><td>15.2</td><td>28.5</td><td>8.1</td></tr>
+          <tr><td class="lft">π₀</td>
+            <td>98.0</td><td>96.8</td><td>94.4</td><td>88.4</td><td>94.4</td>
+            <td class="grp-l">81.4</td><td>6.0</td><td>13.8</td><td>58.8</td><td class="sec">79.0</td><td>68.9</td><td>85.0</td></tr>
+          <tr><td class="lft">π₀-FAST</td>
+            <td>96.4</td><td>96.8</td><td>88.6</td><td>60.2</td><td>85.5</td>
+            <td class="grp-l">73.2</td><td>21.6</td><td class="sec">65.1</td><td>61.0</td><td>74.4</td><td>68.8</td><td>73.2</td></tr>
+          <tr><td class="lft">RIPT-VLA</td>
+            <td class="sec">98.6</td><td>98.6</td><td class="best">99.0</td><td>93.8</td><td>97.5</td>
+            <td class="grp-l">91.6</td><td>31.2</td><td>55.2</td><td>77.6</td><td>73.5</td><td>74.2</td><td>88.4</td></tr>
+          <tr><td class="lft">OpenVLA-OFT</td>
+            <td>97.6</td><td>98.4</td><td class="sec">97.9</td><td>94.5</td><td>97.1</td>
+            <td class="grp-l sec">93.3</td><td>31.9</td><td>56.4</td><td>79.5</td><td>75.8</td><td>74.2</td><td>88.7</td></tr>
+          <tr><td class="lft">ABot-M0</td>
+            <td class="best">98.8</td><td class="best">99.8</td><td class="best">99.0</td><td class="best">96.6</td><td class="best">98.6</td>
+            <td class="grp-l">91.6</td><td class="sec">67.9</td><td>60.4</td><td class="sec">86.4</td><td class="best">86.4</td><td class="sec">82.6</td><td class="sec">96.2</td></tr>
+          <tr class="ours"><td class="lft">EffVLA (ours)</td>
+            <td class="sec">98.6</td><td class="sec">99.2</td><td class="best">99.0</td><td class="sec">96.0</td><td class="sec">98.2</td>
+            <td class="grp-l best">96.7</td><td class="best">69.8</td><td class="best">68.3</td><td class="best">87.5</td><td>66.1</td><td class="best">84.8</td><td class="best">97.4</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="cap">Success rate (%), in the two-breakdown layout of the paper: standard LIBERO by its four
+    task suites (left) and LIBERO-Plus by its seven zero-shot perturbation axes (right) — background,
+    robot initial state, camera viewpoint, language instructions, sensor noise, object layout, lighting.
+    <b class="best">Bold</b>: column best. <span class="sec">Underlined</span>: second best.
+    Standard LIBERO has compressed the top tier into a 96–99% band and EffVLA sits inside it, 0.4 points
+    behind ABot-M0. LIBERO-Plus separates the same models: EffVLA leads on <strong>six of the seven</strong>
+    perturbation axes, with its widest margins on exactly the spatial and language axes an aligned head is
+    built to help — camera viewpoint (+7.9 over ABot-M0) and robot initial state (+37.9 over
+    OpenVLA-OFT). It trails only on sensor noise, where the simpler MLP head was already strongest in our
+    own ablation. Every row other than EffVLA is as reported by Yang et al.; EffVLA is the only row we
+    evaluate ourselves, under the same protocol.</p>
+
+    <div class="content" style="margin-top:1.5rem">
+      <h4 style="font-family:'Noto Sans',sans-serif;color:var(--ink);font-weight:700">It transfers to a real arm</h4>
+      <p>The recipe transfers unchanged to a low-cost SO-ARM101 open-source 6-DOF arm — same head, same
+      loss, no axis of the study re-tuned for the new embodiment. Only the data pipeline changes: Stage A
+      uses the SO-ARM101 community corpus in place of DROID, and Stage B fine-tunes on a small set of
+      teleoperated demonstrations. Across five language-specified sorting tasks it succeeds on
+      <span class="num">40 of 50</span> trials.</p>
+
+      <div class="tbl">
+        <table class="t">
+          <thead><tr><th class="lft">Instruction</th><th>Objects</th><th>Success</th></tr></thead>
+          <tbody>
+            <tr><td class="lft"><em>Pick up the yellow cube and place it in the small compartment.</em></td><td>1</td><td>10/10</td></tr>
+            <tr><td class="lft"><em>Pick up the blue marker and place it in the medium compartment.</em></td><td>1</td><td>9/10</td></tr>
+            <tr><td class="lft"><em>Pick up the blackboard eraser and place it in the large compartment, then pick up the yellow cube and place it in the small compartment.</em></td><td>2</td><td>9/10</td></tr>
+            <tr><td class="lft"><em>Pick up the blue marker and place it in the medium compartment, and pick up the yellow cube and place it in the small compartment.</em></td><td>2</td><td>7/10</td></tr>
+            <tr><td class="lft"><em>Pick up the blackboard eraser and place it in the large compartment, pick up the blue marker and place it in the medium compartment, and pick up the yellow cube and place it in the small compartment.</em></td><td>3</td><td>5/10</td></tr>
+            <tr class="ours"><td class="lft"><strong>Total</strong></td><td>&mdash;</td><td><strong>40/50</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="cap">Instructions exactly as issued, ten trials each. An episode counts as a success only if
+      every object named in the instruction ends in the compartment it names, so errors compound across a sequence:
+      success falls from 10/10 on the single-object tasks to 5/10 on the three-object one. We report this as
+      a feasibility and transfer result — we did not run the alternative action heads on hardware, so it does
+      not show that the LIBERO-selected recipe stays preferable in the physical setting.</p>
+    </div>
+  </div>
+</section>
+
+<hr class="rule">
+
+<!-- ===================== HOLDS ELSEWHERE ===================== -->
+<section class="section" id="holds">
+  <div class="container is-max-desktop">
+    <h2 class="title sec-title">Does the effect hold outside this grid?</h2>
+    <div class="content">
+      <p class="lede">Two checks, neither of which extends the claim: they test whether the one result the
+      paper rests on is specific to the configuration we happened to sweep.</p>
+      <p><strong>It holds in every matched pair.</strong> Ten pairs of cells in the study differ
+      <em>only</em> in how the action head was initialized, holding decoder, parameter count, latency,
+      module scales and inference budget fixed. All ten favour VLM-init, by
+      <span class="num">+5.8</span> points on average, across eight module-scale configurations, both
+      inference budgets, and two benchmarks.</p>
+      <p><strong>It reproduces on another embodiment.</strong> On SimplerEnv (WidowX), the same contrast is
+      <span class="num">+7.3</span> points against <span class="num">+7.1</span> on LIBERO-Plus — and there
+      the random-init head is <em>architecture-matched</em>: the same Qwen decoder layers are deep-copied
+      and then re-drawn, so topology, parameter count and latency are identical and only the weight values
+      differ. That places the gain in the weights, not in the head's architecture or capacity.</p>
+    </div>
+
+    <div class="tbl">
+      <table class="t">
+        <thead><tr><th class="lft">Substrate</th><th>Stack</th><th>Carrot</th><th>Spoon</th><th>Eggplant</th><th>Overall</th></tr></thead>
+        <tbody>
+          <tr><td class="lft">OFT (MLP)</td><td>50.0</td><td>37.5</td><td>50.0</td><td class="best">100.0</td><td>59.4</td></tr>
+          <tr><td class="lft">TF block, random init</td><td>8.3</td><td class="best">58.3</td><td class="best">79.2</td><td>70.8</td><td>54.2</td></tr>
+          <tr><td class="lft">π₀ (flow matching)</td><td>43.6</td><td>36.6</td><td>67.9</td><td>93.8</td><td>60.5</td></tr>
+          <tr class="ours"><td class="lft">EffVLA (TF block, VLM-init)</td><td>37.5</td><td>50.0</td><td>75.0</td><td>83.3</td><td class="best">61.5</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="cap">SimplerEnv on a WidowX arm; 24 trials per task, 96 per model. The three strongest
+    substrates again fall within a few points of each other and OFT and π₀ swap order between benchmarks,
+    so we read them as tied here too. At 96 trials the standard error on a difference is about 7 points,
+    so this is a replication of the effect size and the ordering, not an independent significance test.</p>
+  </div>
+</section>
+
+<hr class="rule">
+
+<!-- ===================== BIBTEX ===================== -->
+<section class="section" id="bibtex">
+  <div class="container is-max-desktop">
+    <h2 class="title sec-title">BibTeX</h2>
+<pre class="bib">@article{sun2026effvla,
+  title   = {What Makes an Efficient VLA? Navigating Action-Head Design, Scaling, and Latency},
+  author  = {Sun, Luoyang and Xia, Guoyang and Li, Fengfa and Ren, Lei and
+             Cui, Xinyu and Zhang, Haifeng and Feng, Fangxiang and
+             Zhang, Kaike and Zhan, Kun and Xie, Yan and Wang, Jun and
+             Deng, Cheng},
+  year    = {2026}
+}</pre>
+  </div>
+</section>
+
+<footer>
+  <p><a href="#">Paper — coming soon</a> · <a href="https://github.com/MindVLA-Team/EFFVLA">Code</a></p>
+  <p style="margin-top:.4rem">The action-head modeling code is available on GitHub; the arXiv posting will follow.</p>
+  <p style="margin-top:.8rem;font-size:.78rem">Page template adapted from
+    <a href="https://nerfies.github.io/">Nerfies</a>, licensed under
+    <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>.</p>
+</footer>
+
+</body>
+</html>
