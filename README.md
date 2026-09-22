@@ -8,11 +8,11 @@ Luoyang Sun<sup>1,2,3,4</sup>, Guoyang Xia<sup>5,4</sup>, Fengfa Li<sup>4</sup>,
 
 <br>
 
-[![arXiv](https://img.shields.io/badge/arXiv-coming_soon-b31b1b?logo=arxiv&logoColor=white)](#) &nbsp;[![Paper](https://img.shields.io/badge/Paper-coming_soon-4b5563)](#) &nbsp;[![Project Page](https://img.shields.io/badge/Project_Page-Website-0B5D43)](https://mindvla-team.github.io/EFFVLA/) &nbsp;[![Code](https://img.shields.io/badge/Code-GitHub-181717?logo=github&logoColor=white)](https://github.com/MindVLA-Team/EFFVLA)
+[![arXiv](https://img.shields.io/badge/arXiv-2609.13984-b31b1b?logo=arxiv&logoColor=white)](https://arxiv.org/abs/2609.13984) &nbsp;[![Project Page](https://img.shields.io/badge/Project_Page-Website-0B5D43)](https://mindvla-team.github.io/EFFVLA/) &nbsp;[![Code](https://img.shields.io/badge/Code-GitHub-181717?logo=github&logoColor=white)](https://github.com/MindVLA-Team/EFFVLA)
 
 </div>
 
-> **What decides a modular VLA's action head is not its decoder, loss, or inference budget, but how it is initialized.** Copying the backbone's last transformer layers into the head is the largest lever we measure; _representation alignment_ is the account we offer for why it works.
+> **What decides a modular VLA's action head is not its decoder, loss, or inference budget, but how it is initialized.** Copying the backbone's last transformer layers into the head is the largest lever we measure; _backbone-head compatibility_ is the account we offer for why it works.
 > This repository releases the action-head modeling code — two models, **`EffVLA`** and **`Pi0`** — as drop-in modules for the [starVLA](https://github.com/MindVLA-Team) framework.
 
 <p align="center">
@@ -27,19 +27,19 @@ Holding the vision encoder, language backbone, data, and benchmark fixed, and va
 | | Finding | Result |
 |:--:|:--|:--:|
 | **1** | **Align the head, then keep it simple.** VLM-initializing the head is the largest lever, at no latency cost; once aligned, flow matching and extra passes stop paying. | **+7.1** pts |
-| **2** | **Capacity pays only after alignment.** The aligned action head is the highest-return module to scale — far above the vision encoder or language backbone. | **~4** pts / ms |
+| **2** | **Initialization amplifies the return to capacity.** The initialized action head is the highest-return module to scale — far above the vision encoder or language backbone. | **~4** pts / ms |
 | **3** | **Stop at a modest size.** Returns saturate early, near the budget today's π-series VLAs already use. | **~3.75B** |
 
 ![](https://img.shields.io/badge/02-0B5D43?style=flat-square) &nbsp;**WHY&nbsp;IT&nbsp;WORKS**
-## The alignment mechanism
+## Evidence for backbone-head compatibility
 
-Alignment is directly measurable, and it is what the initialized head retains. It holds a linear CKA of **0.76** with the backbone throughout fine-tuning while a random head never rises above **0.24**, at every layer, and the gap tracks the accuracy gain across all backbone sizes.
+VLM initialization leaves a clear signature in weight space. Weight-Gram CKA between the action head's projection weights and its backbone reference decreases from about **0.88 to 0.76** during fine-tuning, but remains far above the random-init control (about **0.27 to 0.24**). The separation is also visible across all four action-head layers. Across the tested vision and language sizes, VLM initialization improves LIBERO-Plus success by **+5.1 to +7.3** points.
 
 <p align="center">
-  <img src="static/images/cka.png" width="88%" alt="CKA between the action head and the backbone, held through training and across layers, and the success-rate gain across model sizes.">
+  <img src="static/images/cka.png" width="88%" alt="Weight-Gram CKA through training and across action-head layers, plus matched VLM-initialization success-rate gains across vision and language sizes.">
 </p>
 
-It also shows up in behaviour. Told to *"put the black bowl in the bottom drawer of the cabinet,"* the aligned head concentrates on the instruction and the named object; the random head is diffuse and leaves the instruction almost unattended (text mass **0.223** vs **0.030**). Across all 128 rollouts the aligned head attends ~**4×** more to the instruction, focusing on the nouns that name the task.
+It also shows up in attention behaviour. Told to *"put the black bowl in the bottom drawer of the cabinet,"* the initialized head assigns more total attention to the instruction and shows a more concentrated visual pattern, while the random head is diffuse and leaves the instruction almost unattended (text mass **0.223** vs **0.030**). The strongest text tokens include `assistant` and `put`; `assistant` may act as an attention sink, so we do not interpret the token ranking as human-like semantic focus. Across all 128 rollouts, the initialized head assigns about **4×** more attention mass to the instruction.
 
 <p align="center">
   <img src="static/images/attention_case.png" width="88%" alt="A single rollout: random init (left) vs VLM-init (right).">
@@ -47,12 +47,12 @@ It also shows up in behaviour. Told to *"put the black bowl in the bottom drawer
   <img src="static/images/attention_summary.png" width="88%" alt="Aggregate instruction attention over 128 rollouts, and the top instruction words by VLM-init attention.">
 </p>
 
-Because we reach that state only through initialization, we present representation alignment as the reading that best organizes these measurements rather than as a demonstrated cause; the paper names the control that would settle it.
+Together, weight-space CKA and attention are consistent with a backbone-head compatibility account. Weight-space CKA is not an activation-level representation measure and does not by itself demonstrate semantic grounding, so we present compatibility as an interpretation of the measurements rather than as an established cause.
 
 ![](https://img.shields.io/badge/03-0B5D43?style=flat-square) &nbsp;**THEN&nbsp;CAPACITY**
 ## Where to scale
 
-Capacity pays only after alignment: under the aligned head, scaling the action head turns capacity into accuracy while the vision encoder and language backbone saturate — and even the action head saturates past a modest size.
+Initialization strongly amplifies the return to action-head capacity: scaling the random-initialized transformer head still helps (**+3.1** points from small to large), but the same scaling after VLM initialization yields **+9.4** points. The vision encoder and language backbone saturate earlier, and even the action head saturates past a modest size.
 
 <p align="center">
   <img src="static/images/module_scaling.png" width="100%" alt="Success rate vs module parameter count for the language backbone, vision encoder, and action head under three substrates.">
