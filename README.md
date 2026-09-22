@@ -166,10 +166,14 @@ Everything else these modules import (`base_framework`, the VLM loader, the trai
 ## Citation
 
 ```bibtex
-@article{sun2026effvla,
-  title   = {What Makes an Efficient VLA? Navigating Action-Head Design, Scaling, and Latency},
-  author  = {Sun, Luoyang and Xia, Guoyang and Li, Fengfa and Ren, Lei and Cui, Xinyu and Zhang, Haifeng and Feng, Fangxiang and Zhang, Kaike and Zhan, Kun and Xie, Yan and Wang, Jun and Deng, Cheng},
-  year    = {2026}
+@misc{sun2026makesefficientvlanavigating,
+  title={What Makes an Efficient VLA? Navigating Action-Head Design, Scaling, and Latency},
+  author={Luoyang Sun and Guoyang Xia and Fengfa Li and Lei Ren and Xinyu Cui and Haifeng Zhang and Fangxiang Feng and Kaike Zhang and Kun Zhan and Yan Xie and Jun Wang and Cheng Deng},
+  year={2026},
+  eprint={2609.13984},
+  archivePrefix={arXiv},
+  primaryClass={cs.RO},
+  url={https://arxiv.org/abs/2609.13984},
 }
 ```
 
