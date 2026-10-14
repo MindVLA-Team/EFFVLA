@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>EffVLA — What Makes an Efficient VLA?</title>
-<meta name="description" content="Navigating action-head design, scaling, and latency for modular Vision-Language-Action models. What decides the action head is not its decoder, loss, or inference budget, but how it is initialized.">
-<meta property="og:title" content="What Makes an Efficient VLA?">
-<meta property="og:description" content="Navigating Action-Head Design, Scaling, and Latency">
+<title>EffVLA | How to Build an Efficient VLA</title>
+<meta name="description" content="A controlled study of action-head design, module scaling, and inference latency for modular vision-language-action models. CoRL 2026.">
+<meta property="og:title" content="How to Build an Efficient VLA">
+<meta property="og:description" content="A Design Space Study for Modular Vision-Language-Action Models">
 <meta property="og:image" content="static/images/hero.png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -144,161 +144,18 @@
 </style>
 </head>
 <body>
-
-<div class="nav"><div class="inner">
-  <a class="mark" href="#top">EffVLA</a>
-  <a href="#abstract">Abstract</a>
-  <a href="#findings">Findings</a>
-  <a href="#substrates">Design space</a>
-  <a href="#reversal">The reversal</a>
-  <a href="#alignment">Alignment</a>
-  <a href="#scaling">Scaling</a>
-  <a href="#results">Results</a>
-  <a href="#holds">Holds elsewhere</a>
-  <a href="#bibtex">BibTeX</a>
-</div></div>
-
-<span id="top"></span>
-
-<!-- ===================== HERO ===================== -->
-<section class="section" style="padding-top:3.5rem;padding-bottom:1rem">
-  <div class="container is-max-desktop has-text-centered">
-    <h1 class="title pub-title">What Makes an <em>Efficient</em> VLA?</h1>
-    <p class="pub-sub">Navigating Action-Head Design,<br>Scaling, and Latency</p>
-
-    <p class="authors">
-      <span>Luoyang Sun<sup>1,2,3,4</sup>*</span>
-      <span>Guoyang Xia<sup>5,4</sup>*</span>
-      <span>Fengfa Li<sup>4</sup></span>
-      <span>Lei Ren<sup>4</sup>†‡</span>
-      <span>Xinyu Cui<sup>1,2</sup></span>
-      <span>Haifeng Zhang<sup>1</sup>‡</span>
-      <span>Fangxiang Feng<sup>5</sup></span>
-      <span>Kaike Zhang<sup>4</sup></span>
-      <span>Kun Zhan<sup>4</sup></span>
-      <span>Yan Xie<sup>4</sup></span>
-      <span>Jun Wang<sup>6</sup></span>
-      <span>Cheng Deng<sup>7</sup>‡</span>
-    </p>
-    <p class="affil">
-      <span><sup>1</sup>Institute of Automation, Chinese Academy of Sciences</span>
-      <span><sup>2</sup>University of Chinese Academy of Sciences</span>
-      <span><sup>3</sup>AI Lab, The Yangtze River Delta</span>
-      <span><sup>4</sup>Li Auto Inc.</span>
-      <span><sup>5</sup>Beijing University of Posts and Telecommunications</span>
-      <span><sup>6</sup>University College London</span>
-      <span><sup>7</sup>University of Edinburgh</span>
-    </p>
-    <p class="legend">*Equal contribution &nbsp; †Project Leader &nbsp; ‡Corresponding author</p>
-
-    <div class="buttons is-centered" style="margin-top:1.8rem">
-      <a class="button is-ghost2" disabled>arXiv — coming soon</a>
-      <a class="button is-paper" href="#">Paper (PDF)</a>
-      <a class="button is-ghost2" href="https://github.com/MindVLA-Team/EFFVLA">Code</a>
-    </div>
-
-  </div>
-</section>
-
-<!-- ===================== TEASER ===================== -->
-<section class="section" style="padding-top:1.5rem;padding-bottom:1.5rem">
-  <div class="container is-max-desktop">
-    <figure>
-      <img src="static/images/hero.png" alt="The module-scale factorial, the eight action-head substrates, and every substrate on the accuracy-latency plane.">
-      <figcaption><strong>A controlled design-space study of a modular VLA on one fixed backbone.</strong>
-        <strong>(a)</strong> The module-scale factorial: the vision encoder (V), language backbone (L)
-        and action head (A) are held at an anchor and swept independently, crossed with the orthogonal
-        action-head axes. <strong>(b)</strong> The eight action-head <em>substrates</em> — all share the
-        same V+L backbone and differ only in the head. <strong>(c)</strong> Every measured substrate on
-        the accuracy–latency plane; EffVLA holds the frontier.</figcaption>
-    </figure>
-  </div>
-</section>
-
-<hr class="rule">
-
-<!-- ===================== ABSTRACT ===================== -->
-<section class="section" id="abstract">
-  <div class="container is-max-desktop">
-    <h2 class="title sec-title has-text-centered">Abstract</h2>
-    <div class="content has-text-justified" style="margin-top:1.5rem">
-      <p>Vision-Language-Action (VLA) models combine a pretrained vision encoder, a language backbone,
-      and an action head, but which of these design choices actually drives performance has not been
-      measured under controlled, latency-paired conditions. We fix the backbone (SigLIP2-So400m and
-      Qwen2.5) and the pipeline (DROID, LIBERO, LIBERO-Plus), and sweep the action head along four axes
-      — decoder, loss, initialization, inference passes — and the per-module scale, pairing every
-      configuration with measured on-device latency.</p>
-      <p>Three findings come out of the experiment. <strong>First</strong>, what decides the action head
-      is not its decoder, loss, or inference budget but <em>how it is initialized</em>. Copying the last
-      transformer layers of the language backbone into the head is the single largest lever we measure,
-      raises accuracy at no latency cost, and is the only axis that pays at every module scale we test.
-      It also reorders the rest of the design space: flow matching, extra inference passes, and a heavier
-      decoder pay off only while the head is randomly initialized and stop paying once it is not, as if
-      the expressive machinery were compensating for something the initialized head already has. We read
-      that something as representation transfer, and offer it as the account that best organizes the
-      measurements rather than as a demonstrated cause. <strong>Second</strong>,
-      capacity only pays after alignment: the action head is the highest-return module to scale, but
-      only once it is aligned. <strong>Third</strong>, those returns saturate at a model size close to
-      the one today's π-series VLAs already use, so growing the model further only adds latency.</p>
-      <p>The three together specify <strong>EffVLA</strong>, a compact model that matches the strongest
-      open-source VLAs on standard LIBERO, leads on most LIBERO-Plus perturbation axes at lower
-      latency, and transfers to a real SO-ARM101 arm with the recipe unchanged.</p>
-    </div>
-  </div>
-</section>
-
-<hr class="rule">
-
-<!-- ===================== FINDINGS ===================== -->
-<section class="section" id="findings">
-  <div class="container is-max-desktop">
-    <p class="sec-kicker has-text-centered">Three findings</p>
-    <h2 class="title sec-title has-text-centered">What the measurement says</h2>
-    <div class="columns" style="margin-top:2rem">
-      <div class="column"><div class="find">
-        <span class="k">Finding 1 · what to build</span>
-        <h4>Align the head, then keep it simple</h4>
-        <p>What the head is short of is alignment with the VLM, not expressive capacity.
-        Initialization supplies it: <strong>+7.1</strong> points at no latency cost. Once aligned,
-        flow matching loses 4.4; a fourth pass and a heavier decoder fall within noise.</p>
-      </div></div>
-      <div class="column"><div class="find">
-        <span class="k">Finding 2 · where to scale</span>
-        <h4>Capacity only pays after alignment</h4>
-        <p>Aligned, the action head returns ~<strong>4</strong> success points per added millisecond,
-        against ~1 for the vision encoder and ~0.15 for the language backbone. Misaligned, the same
-        scaling buys about a third as much (+3.1 vs +9.4).</p>
-      </div></div>
-      <div class="column"><div class="find">
-        <span class="k">Finding 3 · how big</span>
-        <h4>Stop at a modest size</h4>
-        <p>On LIBERO-Plus, scaling any module past the <span class="num">l</span> configuration leaves
-        accuracy flat while latency keeps climbing. The <strong>~3.75B</strong> budget — close to the
-        π-series scale — is the efficiency/accuracy knee.</p>
-      </div></div>
-    </div>
-  </div>
-</section>
-
-<hr class="rule">
-
-<!-- ===================== DESIGN SPACE ===================== -->
-<section class="section" id="substrates">
-  <div class="container is-max-desktop">
-    <p class="sec-kicker">The design space</p>
-    <h2 class="title sec-title">Eight substrates, one backbone</h2>
-    <div class="content">
-      <p class="lede">A <em>substrate</em> is a fixed choice of the four action-head axes, independent
-      of module size. All eight share the same SigLIP2 + Qwen2.5 backbone and read it through the same
-      KV-share interface — they differ only in the action head.</p>
-      <p>Everything that usually moves between VLA papers is held still: same backbone, same DROID →
-      LIBERO pipeline, same LIBERO-Plus protocol (four task suites × seven zero-shot perturbation axes,
-      ~1,000 rollouts per cell), same hardware for latency (RTX 5090, bf16, batch 1, chunk size 8,
-      <code>torch.compile</code>). Any difference below has to come from the head.</p>
-    </div>
-
-    <div class="tbl">
-      <table class="t">
+<div class="nav"><div class="inner"><a class="mark" href="#top">EffVLA</a><a href="#abstract">Abstract</a><a href="#findings">Findings</a><a href="#substrates">Design space</a><a href="#alignment">Analysis</a><a href="#scaling">Scaling</a><a href="#results">Results</a><a href="#holds">Additional checks</a><a href="#bibtex">BibTeX</a></div></div>
+<section class="section" id="top"><div class="container is-max-desktop has-text-centered">
+<p class="sec-kicker">CoRL 2026</p>
+<h1 class="title pub-title">How to Build an <em>Efficient</em> VLA</h1>
+<p class="pub-sub">A Design Space Study for Modular<br>Vision-Language-Action Models</p>
+<p class="authors"><span>Luoyang Sun<sup>1,2,*†</sup></span><span>Guoyang Xia<sup>3,4,*</sup></span><span>Fengfa Li<sup>4</sup></span><span>Lei Ren<sup>4,‡§</sup></span><span>Xinyu Cui<sup>1,2</sup></span><span>Haifeng Zhang<sup>1,§</sup></span><span>Fangxiang Feng<sup>3</sup></span><span>Kaike Zhang<sup>4</sup></span><span>Kun Zhan<sup>4</sup></span><span>Yan Xie<sup>4</sup></span><span>Jun Wang<sup>5</sup></span><span>Cheng Deng<sup>6,§</sup></span></p>
+<p class="affil"><span><sup>1</sup>Institute of Automation, Chinese Academy of Sciences</span><span><sup>2</sup>University of Chinese Academy of Sciences</span><span><sup>3</sup>School of Artificial Intelligence, Beijing University of Posts and Telecommunications</span><span><sup>4</sup>Li Auto Inc.</span><span><sup>5</sup>University College London</span><span><sup>6</sup>University of Edinburgh</span></p>
+<p class="legend">* Equal contribution &nbsp; ‡ Project leader &nbsp; § Corresponding authors<br>† This work was carried out during Luoyang Sun's project internship jointly hosted by AI Lab, The Yangtze River Delta and Li Auto Inc.</p>
+<div class="buttons is-centered"><a class="button is-ghost2" href="https://arxiv.org/abs/2609.13984">arXiv</a><a class="button is-ghost2" href="https://github.com/MindVLA-Team/EFFVLA">Code</a></div>
+<p class="cap">The arXiv version is titled “What Makes an Efficient VLA? Navigating Action-Head Design, Scaling, and Latency.”</p>
+<figure><img src="static/images/hero.png" alt="Shared training and evaluation, controlled action-head design, and measured success versus latency." loading="lazy"><figcaption><strong>(a)</strong> Shared DROID-to-LIBERO training and evaluation. <strong>(b)</strong> Four head-design axes and independent module-scale sweeps. <strong>(c)</strong> Measured success and inference latency on RTX 5090. OFT-TF uses the updated 39.3 ms measurement.</figcaption></figure>
+</div></section><hr class="rule"><section class="section" id="abstract"><div class="container is-max-desktop"><h2 class="title sec-title">Abstract</h2><div class="content"><p>Vision-Language-Action models combine a pretrained vision encoder, a language backbone, and an action head, but the relative contribution of these design choices is difficult to establish across systems. We fix the backbone families, SigLIP2 and Qwen2.5, and the training pipeline while sweeping action-head design and module scale, pairing the efficiency comparisons with measured on-device latency.</p><p>The study yields three findings. Copying the backbone's last transformer layers into the L1 head gives the largest positive effect in our matched comparisons. After this initialization, the action head is the highest-return module to scale. Returns then diminish at a modest size within the tested regime. Attention analysis is consistent with a backbone-compatibility interpretation but does not establish its cause.</p><p>These findings specify EffVLA, a compact model with competitive standard LIBERO performance and strong results on most LIBERO-Plus perturbation axes. We also evaluate the recipe on SimplerEnv and a real SO-ARM101 arm.</p></div></div></section><hr class="rule"><section class="section" id="findings"><div class="container is-max-desktop"><h2 class="title sec-title">Three findings</h2><div class="columns"><div class="column"><div class="find"><span class="k">1 · What to build</span><h4>Initialize from the backbone</h4><p>Within matched L1 heads, VLM initialization raises success from <strong>72.7% to 79.8%</strong>. The inference computation is unchanged; measured latency is 39.3 vs 39.2 ms.</p></div></div><div class="column"><div class="find"><span class="k">2 · Where to scale</span><h4>Scale the initialized action head</h4><p>From s to l, action-head scaling adds <strong>9.4 points for 2.4 ms</strong>, about 4 points/ms. The matched random L1 head gains 3.1 points.</p></div></div><div class="column"><div class="find"><span class="k">3 · How big</span><h4>Returns diminish beyond l</h4><p>None of EffVLA's tested g-module probes improves its aggregate LIBERO-Plus score over l. This is an observation within the tested family and benchmark.</p></div></div></div></div></section><hr class="rule"><section class="section" id="substrates"><div class="container is-max-desktop"><h2 class="title sec-title">Action-head design</h2><div class="content"><p>We study 63 configurations under a shared DROID pretraining and LIBERO fine-tuning pipeline. The four action-head axes are decoder, loss, initialization, and inference passes. L1 initialization pairs share architecture and module sizes.</p><p>Readout interfaces differ across head families: transformer heads use KV sharing, OFT reads hidden states, and FAST decodes through the language backbone. The random flow-matching head uses DiT, whereas the VLM-initialized flow-matching head uses plain transformer blocks.</p></div><div class="tbl"><table class="t">
         <thead><tr><th>Substrate</th><th>Decoder</th><th>Loss</th><th>Init</th><th>Passes</th><th>Succ. (%)</th></tr></thead>
         <tbody>
           <tr><td>FAST</td><td>AR trunk</td><td>NTP</td><td>—</td><td>many</td><td>57.7</td></tr>
@@ -310,179 +167,19 @@
           <tr><td>π₀</td><td>TF block</td><td>flow matching</td><td>random</td><td>4</td><td>77.4</td></tr>
           <tr><td>π₀-vlminit</td><td>TF block</td><td>flow matching</td><td>VLM-init</td><td>4</td><td>75.2</td></tr>
         </tbody>
-      </table>
-    </div>
-    <p class="cap">LIBERO-Plus 4-suite mean success rate at V = L = A = <span class="num">l</span>.
-    Decoding actions as language tokens (FAST) trails every parallel head by at least 15 points and runs
-    nearly 5× slower. A plain MLP head already lands within 1 point of the best cell. Stacking
-    transformer blocks helps <em>only</em> when they are initialized from the backbone.</p>
-  </div>
-</section>
-
-<hr class="rule">
-
-<!-- ===================== REVERSAL ===================== -->
-<section class="section" id="reversal">
-  <div class="container is-max-desktop">
-    <p class="sec-kicker">The result that reorganized the paper</p>
-    <h2 class="title sec-title">Every expressive trick works — until you align the head</h2>
-    <div class="content">
-      <p class="lede">Take the same four axes and read each one twice: once on a head initialized at
-      random, once on a head initialized from the backbone. The decoder and loss axes
-      <strong>reverse sign</strong>. Alignment never does.</p>
-    </div>
-
-    <div class="tbl">
-      <table class="t">
+      </table></div><p class="cap">LIBERO-Plus reported 4-suite aggregate at V = L = A = l. Perturbation axes have different episode counts, so the aggregate is not their unweighted mean. The MLP head is tested at s/m/l; transformer heads also have g probes.</p></div></section><hr class="rule"><section class="section" id="reversal"><div class="container is-max-desktop"><h2 class="title sec-title">Pairwise design contrasts</h2><div class="tbl"><table class="t">
         <thead><tr>
           <th>Axis</th><th>Variation</th>
-          <th>On a misaligned head<br>(random init)</th>
-          <th>On an aligned head<br>(VLM-init)</th>
+          <th>Random initialization</th>
+          <th>VLM initialization</th>
         </tr></thead>
         <tbody>
           <tr><td>Decoder</td><td>MLP → transformer block</td><td class="neg">−6.3</td><td class="pos">+0.8</td></tr>
           <tr><td>Loss</td><td>L1 → flow matching</td><td class="pos">+2.6</td><td class="neg">−4.4</td></tr>
           <tr><td>Inference compute</td><td>1 pass → 4 passes</td><td class="pos">+2.1</td><td class="neg">−0.2</td></tr>
-          <tr class="ours"><td>Alignment</td><td>random → VLM-init</td><td colspan="2" style="text-align:center">+7.1 &nbsp;— positive at every module scale</td></tr>
+          <tr class="ours"><td>L1 initialization</td><td>random → VLM-init</td><td colspan="2" style="text-align:center">+7.1 at the anchor</td></tr>
         </tbody>
-      </table>
-    </div>
-    <p class="cap">LIBERO-Plus success-rate change in points, at V = L = A = <span class="num">l</span>.
-    The evaluation standard error is ≈1.4 points, so the compute axis sits inside it under both
-    initializations — extra passes simply stop buying anything once the head is aligned.</p>
-
-    <div class="callout">Every axis that reverses is a way of adding <strong>expressive capacity</strong>
-    to the head — a generative loss, a second pass, more decoder machinery — and each earns its keep
-    only while the head is initialized at random. Once initialization supplies what a random head lacks,
-    none of that machinery has anything left to contribute, and it becomes pure latency. What the head
-    is short of is not expressiveness. It is <strong>alignment</strong>.</div>
-  </div>
-</section>
-
-<hr class="rule">
-
-<!-- ===================== ALIGNMENT ===================== -->
-<section class="section" id="alignment">
-  <div class="container is-max-desktop">
-    <p class="sec-kicker">The mechanism</p>
-    <h2 class="title sec-title">Alignment is not a metaphor — it is measurable</h2>
-    <div class="content">
-      <p class="lede">If alignment is really the variable, it should be visible in the weights and in
-      the behaviour, not just in the success rates. It is, in both.</p>
-      <p><strong>In weight space.</strong> Measuring linear CKA between the action head and the
-      corresponding backbone layers, the aligned head holds <span class="num">0.76</span> with the
-      backbone throughout fine-tuning while a random head never rises above
-      <span class="num">0.24</span>. The separation holds at every layer of the head, and the
-      success-rate advantage holds across all six vision- and language-backbone sizes. Read per module,
-      the K+V and output projections are preserved most (CKA 0.79 and 0.81) while the query path adapts
-      most (0.54): the head keeps <em>what</em> the backbone reads and re-purposes <em>how</em> it attends.</p>
-    </div>
-    <figure>
-      <img src="static/images/cka.png" alt="CKA between action head and backbone through training and across layers, and the success-rate gain across sizes.">
-      <figcaption><strong>The aligned head stays part of the backbone it was copied from.</strong>
-        <strong>(a)</strong> Through fine-tuning it holds a CKA of 0.76 with the backbone; a random head
-        stays at 0.24. <strong>(b)</strong> The same separation at every layer of the head.
-        <strong>(c)</strong> The success-rate gain holds across three vision-encoder and three
-        language-backbone sizes.</figcaption>
-    </figure>
-
-    <div class="content">
-      <p><strong>In behaviour.</strong> Told to “put the black bowl in the bottom drawer of the
-      cabinet,” the aligned head concentrates on the instruction and on the bowl it names, while the
-      random head spreads attention diffusely across the scene and leaves the instruction almost
-      unattended.</p>
-    </div>
-    <figure>
-      <img src="static/images/attention_case.png" alt="Attention overlays comparing random init and VLM-init on a single rollout.">
-      <figcaption><strong>A single rollout.</strong> Left: random init. Right: VLM-init. The vision
-        panels overlay the top-K attended patches (agent and wrist views); the ribbon below each shades
-        every instruction token by its attention. Text mass <span class="num">0.030</span> vs
-        <span class="num">0.223</span>.</figcaption>
-    </figure>
-
-    <div class="content">
-      <p>And it is not one lucky rollout. Across all <span class="num">128</span> rollouts the aligned
-      head places roughly <strong>four times</strong> as much attention on the instruction
-      (<span class="num">0.233</span> vs <span class="num">0.055</span>), and the two distributions do
-      not overlap on a single rollout. Ranked by attention, the words it looks at are the object and
-      location nouns that name the task.</p>
-    </div>
-    <figure>
-      <img src="static/images/attention_summary.png" alt="Aggregate instruction attention across 128 rollouts and the top-ranked instruction words.">
-      <figcaption><strong>Aggregated over all rollouts.</strong> <strong>(a)</strong> Instruction
-        attention per rollout, 64 per condition; the two conditions never overlap. <strong>(b)</strong>
-        The top instruction words by VLM-init attention are the object and location nouns that name the
-        task. The aligned head does not merely look at the instruction more — it looks at the part that
-        specifies the goal.</figcaption>
-    </figure>
-
-    <div class="callout" style="border-left-color:var(--grey)">
-      <strong>An honest caveat.</strong> We manipulate alignment only through initialization, so this
-      evidence explains the measurements rather than proving causation. The decisive control —
-      initializing from the <em>same</em> backbone weights with the alignment destroyed (permuted
-      layers, or a random orthogonal rotation) — would collapse both the CKA and the gain if alignment
-      is what matters. We flag it as future work in the paper rather than claiming the causal link.
-    </div>
-  </div>
-</section>
-
-<hr class="rule">
-
-<!-- ===================== SCALING ===================== -->
-<section class="section" id="scaling">
-  <div class="container is-max-desktop">
-    <p class="sec-kicker">Then capacity</p>
-    <h2 class="title sec-title">Capacity only pays after alignment — and then it stops</h2>
-    <div class="content">
-      <p class="lede">Once the head is aligned it becomes the single highest-return place to spend
-      compute. Misaligned, the same parameters buy about a third as much.</p>
-      <p>Added capacity on an aligned head <em>extends</em> a computation the backbone already shares;
-      on a misaligned head it must first spend itself relearning the interface. And it stops early: a
-      1B vision encoder scores <span class="num">78.9</span>, a 7B language backbone
-      <span class="num">77.8</span>, a 650M head <span class="num">78.3</span> — all at or below the
-      <span class="num">79.8</span> anchor, while latency only climbs.</p>
-    </div>
-
-    <div class="tbl">
-      <table class="t">
-        <thead><tr><th>Module scaled (s → l)</th><th>Δ success</th><th>Δ latency</th><th>Return (pts / ms)</th></tr></thead>
-        <tbody>
-          <tr class="ours"><td>Action head — aligned</td><td class="pos">+9.4</td><td>+2.4 ms</td><td>≈ 4</td></tr>
-          <tr><td>Action head — misaligned</td><td>+3.1</td><td>+2.4 ms</td><td>≈ 1.3</td></tr>
-          <tr><td>Vision encoder</td><td>+3.4</td><td>—</td><td>≈ 1</td></tr>
-          <tr><td>Language backbone</td><td>&lt; 2</td><td>—</td><td>≈ 0.15</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <figure>
-      <img src="static/images/module_scaling.png" alt="Success rate versus module parameter count for the language backbone, vision encoder and action head under three substrates.">
-      <figcaption><strong>Only the aligned substrate turns action-head capacity into accuracy — and
-        even that saturates.</strong> The vision and language axes scale at similar rates across
-        substrates; the action head separates them. Beyond the <span class="num">l</span> configuration
-        every curve flattens or dips, which is the empirical basis for fixing the model at ~3.75B.</figcaption>
-    </figure>
-  </div>
-</section>
-
-<hr class="rule">
-
-<!-- ===================== RESULTS ===================== -->
-<section class="section" id="results">
-  <div class="container is-max-desktop">
-    <p class="sec-kicker">The recipe</p>
-    <h2 class="title sec-title">EffVLA — what the three rules select</h2>
-    <div class="content">
-      <p class="lede">The analysis specifies the model, not the other way round: a 4-layer
-      transformer-block head copied from the last 4 layers of Qwen2.5-3B, trained with single-pass L1
-      regression, reading the backbone through a KV-share interface on a SigLIP2-So400m encoder.</p>
-      <p>Of ~3.75B parameters the head adds only ~0.35B, and it runs in
-      <span class="num">39.2 ms</span> per action chunk. Nothing in the architecture is tuned beyond
-      what the three rules prescribe.</p>
-    </div>
-
-    <div class="tbl">
-      <table class="t t-wide">
+      </table></div><p class="cap">Success-rate differences in percentage points. The loss comparison uses four passes on both sides. Decoder comparisons change the readout interface, and the random flow-matching comparison also changes block type. These rows therefore do not all isolate a single factor. Small differences such as +0.8 and −0.2 do not establish a reliable ranking.</p></div></section><hr class="rule"><section class="section" id="alignment"><div class="container is-max-desktop"><h2 class="title sec-title">Attention and backbone compatibility</h2><div class="content"><p>On the black-bowl rollout, the initialized head assigns more attention mass to the instruction: <strong>0.223 vs 0.030</strong>. Its visual attention overlaps the bowl, but its strongest text tokens are <code>assistant</code> and <em>put</em>. The role token may act as an attention sink or prompt-boundary marker.</p></div><figure><img src="static/images/attention_case.png" alt="Original paper attention comparison for the black-bowl rollout." loading="lazy"><figcaption>Random initialization (left) and VLM initialization (right). Top-K patch overlays and token attention are observational evidence, not a causal test of grounding.</figcaption></figure><div class="content"><p>Across 128 rollouts, 64 per condition, mean instruction attention mass is <strong>0.233 vs 0.055</strong>. Aggregate instruction-word rankings emphasize task nouns, while total text mass also includes template tokens.</p></div><figure><img src="static/images/attention_summary.png" alt="Original aggregate attention analysis." loading="lazy"><figcaption>Aggregate attention and instruction-word ranking from the paper appendix.</figcaption></figure><details><summary>Additional weight-space analysis in the arXiv version</summary><div class="content"><p>Weight-Gram CKA measures projection-weight structure, not input-conditioned activations. During fine-tuning, the initialized trajectory decreases from about 0.88 to 0.76, compared with 0.27 to 0.24 for random initialization. Layerwise values are approximately 0.72–0.81 and 0.21–0.27, respectively.</p><p>The trajectory uses a fixed pretrained-backbone reference; the layerwise panel uses each model's final fine-tuned backbone. The six success-rate rows reuse the l/l/l anchor and represent five unique configurations. These measurements support preservation of weight structure, not a demonstrated semantic or causal mechanism.</p></div><figure><img src="static/images/cka.png" alt="Weight-Gram CKA and initialization-matched success rates from the arXiv version." loading="lazy"><figcaption>Additional arXiv analysis. The shared l/l/l anchor shows a +7.1-point gain.</figcaption></figure></details></div></section><hr class="rule"><section class="section" id="scaling"><div class="container is-max-desktop"><h2 class="title sec-title">Module scaling and saturation</h2><div class="content"><p>VLM initialization increases the return to action-head capacity: s-to-l scaling adds <strong>9.4 points</strong>, compared with <strong>3.1</strong> for the matched random L1 head and <strong>4.7</strong> within the random-initialized flow-matching sweep. These are capacity effects, distinct from the initialization comparison.</p></div><figure><img src="static/images/module_budget.png" alt="Original fitted latency trends from the current paper." loading="lazy"><figcaption>Action-head scaling returns about 4.0 points/ms, compared with 1.2 for vision and 0.15 for language. RTX 5090, bf16, batch 1, eight-action chunk. Markers show measured configurations; the g latency used in fitted trends is estimated.</figcaption></figure><figure><img src="static/images/module_scaling.png" alt="Original module-scaling figure." loading="lazy"><figcaption>Other modules stay at l while one module is swept. EffVLA's g probes do not exceed its l anchor. Markers show evaluated configurations; dashed curves are illustrative fits.</figcaption></figure></div></section><hr class="rule"><section class="section" id="results"><div class="container is-max-desktop"><h2 class="title sec-title">EffVLA and benchmark results</h2><div class="content"><p>EffVLA combines a VLM-initialized transformer head, KV sharing, and single-pass L1 regression with SigLIP2 and Qwen2.5-3B. It achieves <strong>98.2% on LIBERO</strong> and <strong>79.8% on LIBERO-Plus</strong>, with <strong>39.2 ms</strong> model inference per action chunk.</p></div><div class="tbl"><table class="t t-wide">
         <thead>
           <tr>
             <th rowspan="2" class="lft">Method</th>
@@ -517,30 +214,15 @@
             <td class="sec">98.6</td><td class="sec">99.2</td><td class="best">99.0</td><td class="sec">96.0</td><td class="sec">98.2</td>
             <td class="grp-l best">96.7</td><td class="best">69.8</td><td class="best">68.3</td><td class="best">87.5</td><td>66.1</td><td class="best">84.8</td><td class="best">97.4</td></tr>
         </tbody>
-      </table>
-    </div>
-    <p class="cap">Success rate (%), in the two-breakdown layout of the paper: standard LIBERO by its four
-    task suites (left) and LIBERO-Plus by its seven zero-shot perturbation axes (right) — background,
-    robot initial state, camera viewpoint, language instructions, sensor noise, object layout, lighting.
-    <b class="best">Bold</b>: column best. <span class="sec">Underlined</span>: second best.
-    Standard LIBERO has compressed the top tier into a 96–99% band and EffVLA sits inside it, 0.4 points
-    behind ABot-M0. LIBERO-Plus separates the same models: EffVLA leads on <strong>six of the seven</strong>
-    perturbation axes, with its widest margins on exactly the spatial and language axes an aligned head is
-    built to help — camera viewpoint (+7.9 over ABot-M0) and robot initial state (+37.9 over
-    OpenVLA-OFT). It trails only on sensor noise, where the simpler MLP head was already strongest in our
-    own ablation. Every row other than EffVLA is as reported by Yang et al.; EffVLA is the only row we
-    evaluate ourselves, under the same protocol.</p>
-
-    <div class="content" style="margin-top:1.5rem">
-      <h4 style="font-family:'Noto Sans',sans-serif;color:var(--ink);font-weight:700">It transfers to a real arm</h4>
-      <p>The recipe transfers unchanged to a low-cost SO-ARM101 open-source 6-DOF arm — same head, same
-      loss, no axis of the study re-tuned for the new embodiment. Only the data pipeline changes: Stage A
-      uses the SO-ARM101 community corpus in place of DROID, and Stage B fine-tunes on a small set of
-      teleoperated demonstrations. Across five language-specified sorting tasks it succeeds on
-      <span class="num">40 of 50</span> trials.</p>
-
-      <div class="tbl">
-        <table class="t">
+      </table></div><p class="cap">Scores for methods other than EffVLA are reported by Yang et al., ABot-M0, Tables 3 and 4. EffVLA is evaluated by us. Different training and backbones make this a contextual comparison. EffVLA leads six of the seven listed perturbation axes and trails on sensor noise.</p></div></section><hr class="rule"><section class="section" id="holds"><div class="container is-max-desktop"><h2 class="title sec-title">Additional evaluations</h2><h3 class="title is-4">SimplerEnv on WidowX</h3><div class="tbl"><table class="t">
+        <thead><tr><th class="lft">Substrate</th><th>Stack</th><th>Carrot</th><th>Spoon</th><th>Eggplant</th><th>Overall</th></tr></thead>
+        <tbody>
+          <tr><td class="lft">OFT (MLP)</td><td>50.0</td><td>37.5</td><td>50.0</td><td class="best">100.0</td><td>59.4</td></tr>
+          <tr><td class="lft">TF block, random init</td><td>8.3</td><td class="best">58.3</td><td class="best">79.2</td><td>70.8</td><td>54.2</td></tr>
+          <tr><td class="lft">π₀ (flow matching)</td><td>43.6</td><td>36.6</td><td>67.9</td><td>93.8</td><td>60.5</td></tr>
+          <tr class="ours"><td class="lft">EffVLA (TF block, VLM-init)</td><td>37.5</td><td>50.0</td><td>75.0</td><td>83.3</td><td class="best">61.5</td></tr>
+        </tbody>
+      </table></div><p class="cap">The matched random transformer scores 54.2%, versus 61.5% for EffVLA. OFT, π₀ and EffVLA remain within a few points.</p><h3 class="title is-4">Five training seeds</h3><div class="tbl"><table class="t"><thead><tr><th>Seed</th><th>EffVLA</th><th>OFT (MLP)</th><th>Δ</th></tr></thead><tbody><tr><td>1</td><td>79.8</td><td>79</td><td>+0.8</td></tr><tr><td>2</td><td>77.2</td><td>75.5</td><td>+1.7</td></tr><tr><td>3</td><td>78.5</td><td>77.2</td><td>+1.3</td></tr><tr><td>4</td><td>80</td><td>78.8</td><td>+1.2</td></tr><tr><td>5</td><td>79.5</td><td>79</td><td>+0.5</td></tr><tr><td>Mean ± SD</td><td>79.0 ± 1.2</td><td>77.9 ± 1.5</td><td>+1.1</td></tr></tbody></table></div><p class="cap">LIBERO-Plus success rate (%). This checks the close EffVLA–OFT ordering, not the variance of the random-versus-VLM initialization contrast.</p><p>All ten L1 initialization comparisons in the appendix are positive, averaging +5.8 points. They share data and components and are not ten independent replications.</p></div></section><hr class="rule"><section class="section" id="robot"><div class="container is-max-desktop"><h2 class="title sec-title">Real-robot sorting on SO-ARM101</h2><figure><img src="static/images/robot_filmstrip.png" alt="Original paper keyframes of the SO-ARM101 sorting rollout." loading="lazy"><figcaption>The same head and loss transfer to a physical robot, with robot-specific training data.</figcaption></figure><div class="tbl"><table class="t">
           <thead><tr><th class="lft">Instruction</th><th>Objects</th><th>Success</th></tr></thead>
           <tbody>
             <tr><td class="lft"><em>Pick up the yellow cube and place it in the small compartment.</em></td><td>1</td><td>10/10</td></tr>
@@ -550,80 +232,9 @@
             <tr><td class="lft"><em>Pick up the blackboard eraser and place it in the large compartment, pick up the blue marker and place it in the medium compartment, and pick up the yellow cube and place it in the small compartment.</em></td><td>3</td><td>5/10</td></tr>
             <tr class="ours"><td class="lft"><strong>Total</strong></td><td>&mdash;</td><td><strong>40/50</strong></td></tr>
           </tbody>
-        </table>
-      </div>
-      <p class="cap">Instructions exactly as issued, ten trials each. An episode counts as a success only if
-      every object named in the instruction ends in the compartment it names, so errors compound across a sequence:
-      success falls from 10/10 on the single-object tasks to 5/10 on the three-object one. We report this as
-      a feasibility and transfer result — we did not run the alternative action heads on hardware, so it does
-      not show that the LIBERO-selected recipe stays preferable in the physical setting.</p>
-    </div>
-  </div>
-</section>
-
-<hr class="rule">
-
-<!-- ===================== HOLDS ELSEWHERE ===================== -->
-<section class="section" id="holds">
-  <div class="container is-max-desktop">
-    <h2 class="title sec-title">Does the effect hold outside this grid?</h2>
-    <div class="content">
-      <p class="lede">Two checks, neither of which extends the claim: they test whether the one result the
-      paper rests on is specific to the configuration we happened to sweep.</p>
-      <p><strong>It holds in every matched pair.</strong> Ten pairs of cells in the study differ
-      <em>only</em> in how the action head was initialized, holding decoder, parameter count, latency,
-      module scales and inference budget fixed. All ten favour VLM-init, by
-      <span class="num">+5.8</span> points on average, across eight module-scale configurations, both
-      inference budgets, and two benchmarks.</p>
-      <p><strong>It reproduces on another embodiment.</strong> On SimplerEnv (WidowX), the same contrast is
-      <span class="num">+7.3</span> points against <span class="num">+7.1</span> on LIBERO-Plus — and there
-      the random-init head is <em>architecture-matched</em>: the same Qwen decoder layers are deep-copied
-      and then re-drawn, so topology, parameter count and latency are identical and only the weight values
-      differ. That places the gain in the weights, not in the head's architecture or capacity.</p>
-    </div>
-
-    <div class="tbl">
-      <table class="t">
-        <thead><tr><th class="lft">Substrate</th><th>Stack</th><th>Carrot</th><th>Spoon</th><th>Eggplant</th><th>Overall</th></tr></thead>
-        <tbody>
-          <tr><td class="lft">OFT (MLP)</td><td>50.0</td><td>37.5</td><td>50.0</td><td class="best">100.0</td><td>59.4</td></tr>
-          <tr><td class="lft">TF block, random init</td><td>8.3</td><td class="best">58.3</td><td class="best">79.2</td><td>70.8</td><td>54.2</td></tr>
-          <tr><td class="lft">π₀ (flow matching)</td><td>43.6</td><td>36.6</td><td>67.9</td><td>93.8</td><td>60.5</td></tr>
-          <tr class="ours"><td class="lft">EffVLA (TF block, VLM-init)</td><td>37.5</td><td>50.0</td><td>75.0</td><td>83.3</td><td class="best">61.5</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p class="cap">SimplerEnv on a WidowX arm; 24 trials per task, 96 per model. The three strongest
-    substrates again fall within a few points of each other and OFT and π₀ swap order between benchmarks,
-    so we read them as tied here too. At 96 trials the standard error on a difference is about 7 points,
-    so this is a replication of the effect size and the ordering, not an independent significance test.</p>
-  </div>
-</section>
-
-<hr class="rule">
-
-<!-- ===================== BIBTEX ===================== -->
-<section class="section" id="bibtex">
-  <div class="container is-max-desktop">
-    <h2 class="title sec-title">BibTeX</h2>
-<pre class="bib">@article{sun2026effvla,
-  title   = {What Makes an Efficient VLA? Navigating Action-Head Design, Scaling, and Latency},
-  author  = {Sun, Luoyang and Xia, Guoyang and Li, Fengfa and Ren, Lei and
-             Cui, Xinyu and Zhang, Haifeng and Feng, Fangxiang and
-             Zhang, Kaike and Zhan, Kun and Xie, Yan and Wang, Jun and
-             Deng, Cheng},
-  year    = {2026}
-}</pre>
-  </div>
-</section>
-
-<footer>
-  <p><a href="#">Paper — coming soon</a> · <a href="https://github.com/MindVLA-Team/EFFVLA">Code</a></p>
-  <p style="margin-top:.4rem">The action-head modeling code is available on GitHub; the arXiv posting will follow.</p>
-  <p style="margin-top:.8rem;font-size:.78rem">Page template adapted from
-    <a href="https://nerfies.github.io/">Nerfies</a>, licensed under
-    <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>.</p>
-</footer>
-
-</body>
-</html>
+        </table></div><p class="cap">Ten trials per task, 40 successes out of 50 overall. The single-object tasks score 10/10 and 9/10; the three-object task scores 5/10. This is a transfer check without alternative-head baselines.</p></div></section><hr class="rule"><section class="section" id="bibtex"><div class="container is-max-desktop"><h2 class="title sec-title">Citation</h2><pre class="bib">@inproceedings{sun2026effvla,
+  title = {How to Build an Efficient VLA: A Design Space Study for Modular Vision-Language-Action Models},
+  author = {Sun, Luoyang and Xia, Guoyang and Li, Fengfa and Ren, Lei and Cui, Xinyu and Zhang, Haifeng and Feng, Fangxiang and Zhang, Kaike and Zhan, Kun and Xie, Yan and Wang, Jun and Deng, Cheng},
+  booktitle = {Conference on Robot Learning},
+  year = {2026}
+}</pre></div></section><footer><p><a href="https://arxiv.org/abs/2609.13984">arXiv</a> · <a href="https://github.com/MindVLA-Team/EFFVLA">Code</a></p><p style="margin-top:.8rem;font-size:.78rem">Page template adapted from <a href="https://nerfies.github.io/">Nerfies</a>, licensed under <a href="https://creativecommons.org/licenses/by-sa/4.0/">CC BY-SA 4.0</a>.</p></footer></body></html>
